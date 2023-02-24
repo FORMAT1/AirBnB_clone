@@ -1,205 +1,218 @@
 #!/usr/bin/python3
-'''
-Command line interpreter for the Airbnb cmd interface
-'''
+"""Module for the entry point of the command interpreter."""
 
 import cmd
-import shlex
-import re
-
-import models
 from models.base_model import BaseModel
-from models.user import User
-from models.city import City
-from models.amenity import Amenity
-from models.place import Place
-from models.state import State
-from models.review import Review
-
-CLASSES = [
-    "BaseModel",
-    "User",
-    "City",
-    "Place",
-    "State",
-    "Amenity",
-    "Review"
-]
+from models import storage
+import re
+import json
 
 
 class HBNBCommand(cmd.Cmd):
-    """Airbnb command processor/interpreter."""
 
-    prompt = '(hbnb) '
-    storage = models.storage
+    """Class for the command interpreter."""
+
+    prompt = "(hbnb) "
+
+    def default(self, line):
+        """Catch commands if nothing else matches then."""
+        # print("DEF:::", line)
+        self._precmd(line)
+
+    def _precmd(self, line):
+        """Intercepts commands to test for class.syntax()"""
+        # print("PRECMD:::", line)
+        match = re.search(r"^(\w*)\.(\w+)(?:\(([^)]*)\))$", line)
+        if not match:
+            return line
+        classname = match.group(1)
+        method = match.group(2)
+        args = match.group(3)
+        match_uid_and_args = re.search('^"([^"]*)"(?:, (.*))?$', args)
+        if match_uid_and_args:
+            uid = match_uid_and_args.group(1)
+            attr_or_dict = match_uid_and_args.group(2)
+        else:
+            uid = args
+            attr_or_dict = False
+
+        attr_and_value = ""
+        if method == "update" and attr_or_dict:
+            match_dict = re.search('^({.*})$', attr_or_dict)
+            if match_dict:
+                self.update_dict(classname, uid, match_dict.group(1))
+                return ""
+            match_attr_and_value = re.search(
+                '^(?:"([^"]*)")?(?:, (.*))?$', attr_or_dict)
+            if match_attr_and_value:
+                attr_and_value = (match_attr_and_value.group(
+                    1) or "") + " " + (match_attr_and_value.group(2) or "")
+        command = method + " " + classname + " " + uid + " " + attr_and_value
+        self.onecmd(command)
+        return command
+
+    def update_dict(self, classname, uid, s_dict):
+        """Helper method for update() with a dictionary."""
+        s = s_dict.replace("'", '"')
+        d = json.loads(s)
+        if not classname:
+            print("** class name missing **")
+        elif classname not in storage.classes():
+            print("** class doesn't exist **")
+        elif uid is None:
+            print("** instance id missing **")
+        else:
+            key = "{}.{}".format(classname, uid)
+            if key not in storage.all():
+                print("** no instance found **")
+            else:
+                attributes = storage.attributes()[classname]
+                for attribute, value in d.items():
+                    if attribute in attributes:
+                        value = attributes[attribute](value)
+                    setattr(storage.all()[key], attribute, value)
+                storage.all()[key].save()
 
     def do_EOF(self, line):
-        '''End the program on EOF'''
+        """Handles End Of File character.
+        """
+        print()
         return True
 
     def do_quit(self, line):
-        '''End the program when quit cmd is typed'''
+        """Exits the program.
+        """
         return True
 
     def emptyline(self):
-        '''Do nothing when an empty line is entered'''
+        """Doesn't do anything on ENTER.
+        """
         pass
 
     def do_create(self, line):
-        '''Create a new instance of BaseModel, saves it (to the JSON file)
-        and prints the id.'''
-        arr = shlex.split(line)
-        if len(arr) == 0:
-            print('** class name missing **')
-            return None
-        if arr[0] not in CLASSES:
+        """Creates an instance.
+        """
+        if line == "" or line is None:
+            print("** class name missing **")
+        elif line not in storage.classes():
             print("** class doesn't exist **")
-            return None
-        '''Code that does actual work'''
-        print(eval(arr[0])().id)
-        self.storage.save()
+        else:
+            b = storage.classes()[line]()
+            b.save()
+            print(b.id)
 
     def do_show(self, line):
-        '''Print the string representation of an instance
-        based on the class name and id'''
-        arr = shlex.split(line)
-        if len(arr) == 0:
-            print('** class name missing **')
-            return None
-        if arr[0] not in CLASSES:
-            print("** class doesn't exist **")
-            return None
-        if len(arr) < 2:
-            print("** instance id missing **")
-            return None
-        '''Code that deos the main work'''
-        key = "{}.{}".format(arr[0], arr[1])
-        if key not in self.storage.all():
-            print("** no instance found **")
+        """Prints the string representation of an instance.
+        """
+        if line == "" or line is None:
+            print("** class name missing **")
         else:
-            print(self.storage.all()[key])
+            words = line.split(' ')
+            if words[0] not in storage.classes():
+                print("** class doesn't exist **")
+            elif len(words) < 2:
+                print("** instance id missing **")
+            else:
+                key = "{}.{}".format(words[0], words[1])
+                if key not in storage.all():
+                    print("** no instance found **")
+                else:
+                    print(storage.all()[key])
 
     def do_destroy(self, line):
-        ''' Delete an instance based on the class name and
-        id (save the change into the JSON file).'''
-        arr = shlex.split(line)
-        if len(arr) == 0:
-            print('** class name missing **')
-            return None
-        if arr[0] not in CLASSES:
-            print("** class doesn't exist **")
-            return None
-        if len(arr) < 2:
-            print("** instance id missing **")
-            return None
-        '''Code that deos the main work'''
-        key = "{}.{}".format(arr[0], arr[1])
-        if key in self.storage.all():
-            del self.storage.all()[key]
-            self.storage.save()
+        """Deletes an instance based on the class name and id.
+        """
+        if line == "" or line is None:
+            print("** class name missing **")
         else:
-            print("** no instance found **")
+            words = line.split(' ')
+            if words[0] not in storage.classes():
+                print("** class doesn't exist **")
+            elif len(words) < 2:
+                print("** instance id missing **")
+            else:
+                key = "{}.{}".format(words[0], words[1])
+                if key not in storage.all():
+                    print("** no instance found **")
+                else:
+                    del storage.all()[key]
+                    storage.save()
 
     def do_all(self, line):
-        '''Print all string representation of all instances based
-        or not on the class name.'''
-        arr = shlex.split(line)
-        objects = self.storage.all().values()
-        if not arr:
-            print([str(obj) for obj in objects])
-        else:
-            if arr[0] not in CLASSES:
+        """Prints all string representation of all instances.
+        """
+        if line != "":
+            words = line.split(' ')
+            if words[0] not in storage.classes():
                 print("** class doesn't exist **")
             else:
-                print([str(obj) for obj in objects
-                       if arr[0] == obj.__class__.__name__])
-
-    def do_update(self, line):
-        '''
-        Update an instance based on the class name and id by adding or
-        updating attribute
-        (save the change into the JSON file)
-        '''
-        arr = shlex.split(line)
-        if len(arr) == 0:
-            print('** class name missing **')
-            return None
-        if arr[0] not in CLASSES:
-            print("** class doesn't exist **")
-            return None
-        if len(arr) < 2:
-            print("** instance id missing **")
-            return None
-        if len(arr) < 3:
-            print("** attribute name missing **")
-            return None
-        if len(arr) < 4:
-            print("** value missing **")
-            return None
-        '''Code that deos the main work'''
-        instance_id = "{}.{}".format(arr[0], arr[1])
-        if instance_id in self.storage.all():
-            obj = self.storage.all()[instance_id]
-            if arr[2] in type(obj).__dict__:
-                v_type = type(obj.__class__.__dict__[arr[2]])
-                setattr(obj, arr[2], v_type(arr[3]))
-            else:
-                setattr(obj, arr[2], arr[3])
+                nl = [str(obj) for key, obj in storage.all().items()
+                      if type(obj).__name__ == words[0]]
+                print(nl)
         else:
-            print("** no instance found **")
-
-        self.storage.save()
+            new_list = [str(obj) for key, obj in storage.all().items()]
+            print(new_list)
 
     def do_count(self, line):
-        """Retrieve the number of instances of a class"""
-        arr = shlex.split(line)
-        count = 0
-        for obj in models.storage.all().values():
-            if arr[0] == type(obj).__name__:
-                count += 1
-        print(count)
+        """Counts the instances of a class.
+        """
+        words = line.split(' ')
+        if not words[0]:
+            print("** class name missing **")
+        elif words[0] not in storage.classes():
+            print("** class doesn't exist **")
+        else:
+            matches = [
+                k for k in storage.all() if k.startswith(
+                    words[0] + '.')]
+            print(len(matches))
 
-    def default(self, line):
-        """Default behaviour for cmd module when input is invalid"""
+    def do_update(self, line):
+        """Updates an instance by adding or updating attribute.
+        """
+        if line == "" or line is None:
+            print("** class name missing **")
+            return
 
-        action_map = {
-            "all": self.do_all,
-            "show": self.do_show,
-            "destroy": self.do_destroy,
-            "count": self.do_count,
-            "update": self.do_update,
-            "create": self.do_create
-        }
-
-        match = re.search(r"\.", line)
-        if match:
-            line1 = [line[:match.span()[0]], line[match.span()[1]:]]
-            match = re.search(r"\((.*?)\)", line1[1])
-            if match:
-                command = [line1[1][:match.span()[0]], match.group()[1:-1]]
-                if command[0] in action_map:
-                    if command[0] != "update":
-                        call = "{} {}".format(line1[0], command[1])
-                        return action_map[command[0]](call)
+        rex = r'^(\S+)(?:\s(\S+)(?:\s(\S+)(?:\s((?:"[^"]*")|(?:(\S)+)))?)?)?'
+        match = re.search(rex, line)
+        classname = match.group(1)
+        uid = match.group(2)
+        attribute = match.group(3)
+        value = match.group(4)
+        if not match:
+            print("** class name missing **")
+        elif classname not in storage.classes():
+            print("** class doesn't exist **")
+        elif uid is None:
+            print("** instance id missing **")
+        else:
+            key = "{}.{}".format(classname, uid)
+            if key not in storage.all():
+                print("** no instance found **")
+            elif not attribute:
+                print("** attribute name missing **")
+            elif not value:
+                print("** value missing **")
+            else:
+                cast = None
+                if not re.search('^".*"$', value):
+                    if '.' in value:
+                        cast = float
                     else:
-                        call = "{} {}".format(line1[0], command[1])
-                        if "{" in call:
-                            call = call.replace(",", "")
-                            call = call.replace("{", "")
-                            call = call.replace("}", "")
-                            call = call.replace(":", " ")
-                            call = call.replace(",", "")
-                            call = shlex.split(call)
-                            while (len(call) > 2):
-                                action_map["update"](" ".join(call))
-                                del call[2:4]
-                            return None
-                        else:
-                            call = call.replace(",", "")
-                            return action_map["update"](call)
-
-        print("*** Unknown syntax: {}".format(line))
-        return False
+                        cast = int
+                else:
+                    value = value.replace('"', '')
+                attributes = storage.attributes()[classname]
+                if attribute in attributes:
+                    value = attributes[attribute](value)
+                elif cast:
+                    try:
+                        value = cast(value)
+                    except ValueError:
+                        pass  # fine, stay a string then
+                setattr(storage.all()[key], attribute, value)
+                storage.all()[key].save()
 
 
 if __name__ == '__main__':

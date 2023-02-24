@@ -1,16 +1,16 @@
 #!/usr/bin/python3
-'''
-Module For Place Class
-'''
+"""This module creates a Place class"""
+
 from models.base_model import BaseModel
 
 
 class Place(BaseModel):
-    '''Place Class that inherits from BaseModel'''
-    city_id = ''
-    user_id = ''
-    name = ''
-    description = ''
+    """Class for managing place objects"""
+
+    city_id = ""
+    user_id = ""
+    name = ""
+    description = ""
     number_rooms = 0
     number_bathrooms = 0
     max_guest = 0
